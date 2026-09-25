@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Production Kanban Prototype v5</title>
+  <style>
+    :root {
+      --nav: #16233f; --blue: #1f67e8; --bg: #f5f7fb; --line: #e5e9f2;
+      --text: #172033; --muted: #697386; --ready: #edf6ff; --view: #eef4ff;
+      --lab: #fff8e7; --pack: #f2efff; --hold: #fff0f0; --finish: #ecfaf2;
+      --vial: #e8f2ff; --ampoule: #fff; --toll: #fff3dc; --toll-border: #e8b85c;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px Inter, system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--text); }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    .app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    .sidebar { background: var(--nav); color: #fff; padding: 22px 16px; }
+    .brand { font-size: 20px; font-weight: 800; margin-bottom: 30px; }
+    .brand small { display: block; font-size: 11px; font-weight: 500; opacity: .65; margin-top: 4px; }
+    .nav { display: grid; gap: 8px; }
+    .nav-item { padding: 11px 12px; border-radius: 9px; opacity: .72; }
+    .nav-item.active { background: #fff; color: #1e3a6d; opacity: 1; font-weight: 700; }
+
+    .main { padding: 24px; overflow: auto; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .title h1 { margin: 0 0 4px; font-size: 22px; }
+    .title p { margin: 0; color: var(--muted); font-size: 12px; }
+    .actions { display: flex; gap: 10px; align-items: center; }
+    .search { width: 340px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+
+    .btn { border: 0; border-radius: 9px; padding: 10px 14px; font-weight: 700; }
+    .btn.primary { background: var(--blue); color: #fff; }
+    .btn.ghost { background: #eef2f8; color: #33415c; }
+    .btn.danger { background: #d94444; color: #fff; }
+    .btn.success { background: #21885a; color: #fff; }
+
+    .board { display: grid; grid-template-columns: 1fr 3fr 1fr 1fr; gap: 12px; align-items: start; }
+    .lane, .in-process { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-height: 410px; }
+    .lane-header { padding: 12px 14px; font-weight: 800; font-size: 12px; letter-spacing: .04em; }
+    .ready .lane-header { background: var(--ready); }
+    .hold .lane-header { background: var(--hold); }
+    .finish .lane-header { background: var(--finish); }
+    .lane-body { padding: 12px; display: grid; gap: 10px; }
+    .in-process > .lane-header { background: #eef4ff; }
+    .process-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 10px; }
+    .process-column { border: 1px solid var(--line); border-radius: 11px; overflow: hidden; min-height: 350px; }
+    .process-column h3 { margin: 0; padding: 9px 10px; font-size: 11px; text-align: center; }
+    .process-column.viewing h3 { background: var(--view); }
+    .process-column.labelling h3 { background: var(--lab); }
+    .process-column.packaging h3 { background: var(--pack); }
+    .cards { padding: 9px; display: grid; gap: 9px; }
+
+    .card { position: relative; border: 1px solid #d9e1ee; background: var(--vial); border-radius: 10px; padding: 11px; box-shadow: 0 2px 6px #14213d0a; }
+    .card.ampoule { background: var(--ampoule); }
+    .card.toll-card { background: var(--toll); border-color: var(--toll-border); }
+    .card.toll-card.ampoule { background: #fff8eb; }
+    .card.hold-card { background: #fff1f1; border-color: #f1bcbc; }
+    .card:hover { transform: translateY(-1px); box-shadow: 0 5px 12px #14213d14; }
+    .card-name { font-weight: 800; margin-bottom: 7px; }
+    .meta { font-size: 11px; color: #566178; line-height: 1.6; }
+    .badge { display: inline-block; font-size: 9px; font-weight: 800; border-radius: 999px; padding: 3px 6px; margin-right: 4px; background: #edf1f7; }
+    .badge.toll { background: #e8e0ff; color: #6042a8; }
+    .badge.priority { background: #fff0bd; color: #8b6400; }
+    .batch-count { position: absolute; right: -6px; top: -7px; width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; background: #fff; border: 2px solid #6d8dc9; font-size: 10px; font-weight: 900; }
+    .priority-indicator { position: absolute; right: 8px; bottom: 7px; color: #d69b00; font-size: 11px; font-weight: 800; }
+
+    .priority-section { margin-top: 16px; background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    .priority-header { display: flex; justify-content: space-between; align-items: center; padding: 13px 15px; border-bottom: 1px solid var(--line); }
+    .priority-section table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .priority-section th, .priority-section td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #eef1f5; }
+    .priority-section th { color: #6b7485; font-size: 10px; text-transform: uppercase; }
+
+    .overlay { position: fixed; inset: 0; background: #0d183a80; display: none; align-items: center; justify-content: center; padding: 24px; z-index: 20; }
+    .overlay.show { display: flex; }
+    .modal { width: min(680px, 96vw); max-height: 88vh; overflow: hidden; background: #fff; border-radius: 16px; box-shadow: 0 24px 80px #0003; display: flex; flex-direction: column; }
+    .modal.small { width: min(540px, 96vw); }
+    .modal-header { position: sticky; top: 0; background: #fff; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+    .modal-header h2 { margin: 0; font-size: 16px; }
+    .close { border: 0; background: none; font-size: 22px; color: #667; }
+    .modal-body { padding: 18px; overflow-y: auto; }
+    .modal-footer { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 9px; padding: 14px 18px; border-top: 1px solid var(--line); background: #fff; box-shadow: 0 -6px 18px #1720330a; }
+
+    .batch-list { display: grid; gap: 9px; }
+    .batch-row { border: 1px solid var(--line); border-radius: 10px; padding: 11px; display: flex; justify-content: space-between; align-items: center; }
+    .batch-row.clickable:hover { background: #f7f9fc; }
+    .hint { font-size: 11px; color: #7b8494; margin-top: 6px; }
+
+    .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tab { padding: 7px 10px; border-radius: 8px; background: #eef2f7; font-size: 11px; font-weight: 800; }
+    .tab.active { background: #dce9ff; color: #1853aa; }
+    .grid-2, .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field label { display: block; font-size: 10px; font-weight: 800; color: #677085; margin-bottom: 5px; }
+    .field input, .field select, .field textarea { width: 100%; padding: 9px; border: 1px solid #dce2ec; border-radius: 8px; background: #fff; }
+    .field textarea { min-height: 72px; }
+    .detail { background: #f7f9fc; border-radius: 9px; padding: 10px; }
+    .detail span { display: block; font-size: 10px; color: #727c8e; }
+    .detail b { display: block; margin-top: 3px; }
+    .history { border-left: 2px solid #dce4ef; margin-left: 7px; padding-left: 16px; display: grid; gap: 14px; }
+    .history-scroll { max-height: 190px; overflow-y: auto; padding: 4px 12px 4px 0; scrollbar-gutter: stable; }
+    .history-scroll::-webkit-scrollbar { width: 7px; }
+    .history-scroll::-webkit-scrollbar-thumb { background: #cbd4e2; border-radius: 999px; }
+    .history-item { position: relative; }
+    .history-item::before { content: ""; position: absolute; width: 9px; height: 9px; border-radius: 50%; background: #2c6de8; left: -22px; top: 4px; }
+    .history-item div { font-size: 11px; color: #697386; margin-top: 3px; }
+
+    /* Priority manager: fixed popup with a compact, scrollable queue */
+    .priority-manager-body {
+      padding: 14px 18px 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+    .priority-manager-body > .hint { flex: 0 0 auto; margin: 0 0 10px; }
+    .priority-editor {
+      display: grid;
+      gap: 6px;
+      overflow-y: auto;
+      min-height: 0;
+      flex: 1 1 auto;
+      align-content: start;
+      padding: 2px 7px 8px 1px;
+      scrollbar-gutter: stable;
+    }
+    .priority-editor::-webkit-scrollbar { width: 7px; }
+    .priority-editor::-webkit-scrollbar-thumb { background: #cbd4e2; border-radius: 999px; }
+    .priority-item {
+      display: grid;
+      grid-template-columns: 20px 28px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 48px;
+      padding: 6px 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      cursor: grab;
+    }
+    .priority-item.dragging { opacity: .45; }
+    .priority-item.drag-over { border-color: var(--blue); background: #f4f8ff; }
+    .drag-handle { font-size: 16px; color: #7d8798; cursor: grab; user-select: none; text-align: center; line-height: 1; }
+    .priority-number { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: #fff0bd; color: #8b6400; font-size: 11px; font-weight: 900; }
+    .priority-info { min-width: 0; display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+    .priority-name { font-size: 12px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .priority-meta { font-size: 10px; color: #7a8496; white-space: nowrap; }
+    .priority-actions { display: flex; gap: 4px; }
+    .icon-btn { border: 0; border-radius: 6px; width: 28px; height: 28px; padding: 0; background: #eef2f8; color: #33415c; display: grid; place-items: center; font-size: 14px; }
+    .add-priority { flex: 0 0 auto; margin-top: 8px; padding: 10px 0 12px; border-top: 1px solid var(--line); background: #fff; }
+    .add-priority .field label { margin-bottom: 6px; }
+    .priority-select { width: 100%; padding: 9px 11px; border: 1px solid #dce2ec; border-radius: 8px; background: #fff; font-size: 12px; color: #263247; }
+
+    .toast { position: fixed; right: 20px; bottom: 20px; background: #173a2a; color: #fff; padding: 11px 14px; border-radius: 9px; display: none; z-index: 50; }
+    .toast.show { display: block; }
+
+    @media (max-width: 1000px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .board { grid-template-columns: 1fr; }
+      .process-grid { grid-template-columns: 1fr; }
+      .search { width: 220px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">PHAPROS<small>Production Tracking</small></div>
+      <nav class="nav">
+        <div class="nav-item active">▦ &nbsp; Kanban Board</div>
+        <div class="nav-item">☷ &nbsp; All Batches</div>
+        <div class="nav-item">⚙ &nbsp; Master Data</div>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="title">
+          <h1>Production Kanban</h1>
+          <p>Batch production tracking • Prototype with dummy data</p>
+        </div>
+        <div class="actions">
+          <input id="searchInput" class="search" placeholder="Search product / batch..." />
+          <button class="btn primary" onclick="openInputBatch()">+ Input Batch</button>
+        </div>
+      </header>
+
+      <section id="kanbanBoard" class="board"></section>
+
+      <section class="priority-section">
+        <div class="priority-header">
+          <b>★ Priority Queue</b>
+          <button class="btn ghost" onclick="openPriorityManager()">Manage Priority</button>
+        </div>
+        <div id="priorityTable"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="overlay" class="overlay">
+    <div id="modal" class="modal"></div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // ============================================================
+    // 1. DUMMY DATA
+    // ============================================================
+    const products = {
+      Paracetamol: { packaging: 'Vial', production: 'Phapros' },
+      Amoxicillin: { packaging: 'Vial', production: 'Phapros' },
+      'Vitamin C': { packaging: 'Ampoule', production: 'Phapros' },
+      Cefixime: { packaging: 'Vial', production: 'Toll In' },
+      Omeprazole: { packaging: 'Ampoule', production: 'Toll In' },
+      Ibuprofen: { packaging: 'Vial', production: 'Phapros' }
+    };
+
+    let batches = [
+      { id:'B004', product:'Paracetamol', batch:'004', process:'Labelling', machine:'M-02', start:'22/09/2026', finish:'', viewing:'Visual', pic:'Budi', priority:1, history:['22/09/2026 08:10 — Batch Created','22/09/2026 10:20 — Ready → Viewing','23/09/2026 09:15 — Viewing → Labelling'] },
+      { id:'B011', product:'Paracetamol', batch:'011', process:'Labelling', machine:'M-01', start:'23/09/2026', finish:'', viewing:'Visual', pic:'Ani', priority:null, history:['23/09/2026 07:40 — Batch Created','23/09/2026 09:30 — Ready → Labelling'] },
+      { id:'B018', product:'Paracetamol', batch:'018', process:'Viewing', machine:'M-02', start:'23/09/2026', finish:'', viewing:'Visual', pic:'Ani', priority:null, history:['23/09/2026 08:00 — Batch Created','23/09/2026 10:00 — Ready → Viewing'] },
+      { id:'B017', product:'Amoxicillin', batch:'017', process:'Viewing', machine:'M-01', start:'22/09/2026', finish:'', viewing:'Visual', pic:'Dina', priority:2, history:['22/09/2026 07:50 — Batch Created','22/09/2026 11:00 — Ready → Viewing'] },
+      { id:'B008', product:'Vitamin C', batch:'008', process:'Packaging', machine:'M-02', start:'23/09/2026', finish:'', viewing:'Visual', pic:'Budi', priority:3, history:['23/09/2026 06:45 — Batch Created','23/09/2026 11:20 — Labelling → Packaging'] },
+      { id:'B021', product:'Cefixime', batch:'021', process:'Ready', machine:'M-03', start:'23/09/2026', finish:'', viewing:'Visual', pic:'Rina', priority:null, history:['23/09/2026 09:00 — Batch Created'] },
+      { id:'B005', product:'Omeprazole', batch:'005', process:'Hold', previousProcess:'Labelling', machine:'M-03', start:'21/09/2026', finish:'', viewing:'Visual', pic:'Dina', priority:null, holdReason:'Waiting material', history:['21/09/2026 08:00 — Batch Created','22/09/2026 13:00 — Labelling → Hold'] },
+      { id:'B009', product:'Ibuprofen', batch:'009', process:'Finish', machine:'M-01', start:'20/09/2026', finish:'23/09/2026', viewing:'Visual', pic:'Rina', priority:null, history:['20/09/2026 08:00 — Batch Created','23/09/2026 12:00 — Packaging → Finish'] }
+    ];
+
+    const processes = ['Ready', 'Viewing', 'Labelling', 'Packaging', 'Hold', 'Finish'];
+    const $ = selector => document.querySelector(selector);
+
+    // ============================================================
+    // 2. SMALL UI HELPERS
+    // ============================================================
+    function showToast(message) {
+      const toast = $('#toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    function showModal(html, small = false) {
+      const modal = $('#modal');
+      modal.className = `modal${small ? ' small' : ''}`;
+      modal.style.height = '';
+      modal.innerHTML = html;
+      $('#overlay').classList.add('show');
+    }
+
+    function closeModal() {
+      $('#overlay').classList.remove('show');
+    }
+
+    function nowText() {
+      return new Date().toLocaleString('id-ID');
+    }
+
+    function todayText() {
+      return new Date().toLocaleDateString('id-ID');
+    }
+
+    // ============================================================
+    // 3. KANBAN DATA + RENDERING
+    // ============================================================
+    function getGroups(process, searchTerm = '') {
+      const matchingBatches = batches.filter(batch => {
+        const matchesProcess = batch.process === process;
+        const matchesSearch = !searchTerm ||
+          batch.product.toLowerCase().includes(searchTerm) ||
+          batch.batch.toLowerCase().includes(searchTerm);
+        return matchesProcess && matchesSearch;
+      });
+
+      const groups = {};
+      matchingBatches.forEach(batch => {
+        if (!groups[batch.product]) groups[batch.product] = [];
+        groups[batch.product].push(batch);
+      });
+
+      return Object.entries(groups).sort(([, groupA], [, groupB]) => {
+        const priorityA = Math.min(...groupA.map(b => b.priority ?? 9999));
+        const priorityB = Math.min(...groupB.map(b => b.priority ?? 9999));
+        return priorityA - priorityB;
+      });
+    }
+
+    function productCardHTML(productName, group) {
+      const product = products[productName] || {};
+      const machines = [...new Set(group.map(b => b.machine))].join(', ');
+      const earliestPriority = Math.min(...group.map(b => b.priority ?? 9999));
+      const hasPriority = earliestPriority !== 9999;
+      const cardClass = product.packaging === 'Ampoule' ? 'ampoule' : '';
+      const holdClass = group[0].process === 'Hold' ? 'hold-card' : '';
+      const tollClass = product.production === 'Toll In' ? 'toll-card' : '';
+
+      return `
+        <div class="card ${cardClass} ${tollClass} ${holdClass}" onclick="openProductGroup('${productName}', '${group[0].process}')">
+          <div class="card-name">${productName}</div>
+          <div class="meta">
+            ${group.length === 1 ? `Batch ${group[0].batch}<br>` : ''}
+            ${machines || '-'} • ${group[0].start}
+          </div>
+          <div style="margin-top:7px">
+            ${product.production === 'Toll In' ? '<span class="badge toll">TOLL IN</span>' : ''}
+          </div>
+          ${group.length > 1 ? `<span class="batch-count">${group.length}</span>` : ''}
+          ${hasPriority ? `<span class="priority-indicator">★${earliestPriority}</span>` : ''}
+        </div>`;
+    }
+
+    function laneHTML(process, cssClass) {
+      const searchTerm = $('#searchInput').value.trim().toLowerCase();
+      const cards = getGroups(process, searchTerm)
+        .map(([product, group]) => productCardHTML(product, group))
+        .join('');
+
+      return `
+        <div class="lane ${cssClass}">
+          <div class="lane-header">${process.toUpperCase()}</div>
+          <div class="lane-body">${cards || '<div class="hint">No batch</div>'}</div>
+        </div>`;
+    }
+
+    function processColumnHTML(process) {
+      const searchTerm = $('#searchInput').value.trim().toLowerCase();
+      const cards = getGroups(process, searchTerm)
+        .map(([product, group]) => productCardHTML(product, group))
+        .join('');
+      const cssClass = process.toLowerCase();
+
+      return `
+        <div class="process-column ${cssClass}">
+          <h3>${process.toUpperCase()}</h3>
+          <div class="cards">${cards || '<div class="hint">No batch</div>'}</div>
+        </div>`;
+    }
+
+    function renderKanban() {
+      $('#kanbanBoard').innerHTML =
+        laneHTML('Ready', 'ready') +
+        `<div class="in-process">
+          <div class="lane-header">IN PROCESS</div>
+          <div class="process-grid">
+            ${processColumnHTML('Viewing')}
+            ${processColumnHTML('Labelling')}
+            ${processColumnHTML('Packaging')}
+          </div>
+        </div>` +
+        laneHTML('Hold', 'hold') +
+        laneHTML('Finish', 'finish');
+
+      renderPriorityTable();
+    }
+
+    // ============================================================
+    // 4. PRODUCT GROUP + BATCH DETAIL
+    // ============================================================
+    function openProductGroup(productName, process) {
+      const group = batches.filter(b => b.product === productName && b.process === process);
+
+      if (group.length === 1) {
+        openEditBatch(group[0].id);
+        return;
+      }
+
+      group.sort((a, b) => (a.priority ?? 9999) - (b.priority ?? 9999));
+
+      showModal(`
+        <div class="modal-header">
+          <h2>${productName} — ${process}</h2>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="batch-list">
+            ${group.map(batch => `
+              <div class="batch-row clickable" onclick="openEditBatch('${batch.id}')">
+                <div>
+                  <b>${batch.priority ? `★ #${batch.priority} ` : ''}Batch ${batch.batch}</b>
+                  <div class="hint">${batch.machine} • ${batch.start}</div>
+                </div>
+                <span>›</span>
+              </div>`).join('')}
+          </div>
+        </div>`, true);
+    }
+
+    function openBatchDetail(batchId, activeTab = 'detail') {
+      const batch = batches.find(b => b.id === batchId);
+      const product = products[batch.product] || {};
+
+      const detailContent = `
+        <div class="detail-grid">
+          <div class="detail"><span>Current Process</span><b>${batch.process}</b></div>
+          <div class="detail"><span>Machine</span><b>${batch.machine}</b></div>
+          <div class="detail"><span>Packaging</span><b>${product.packaging || '-'}</b></div>
+          <div class="detail"><span>Production Type</span><b>${product.production || '-'}</b></div>
+          <div class="detail"><span>Start Date</span><b>${batch.start}</b></div>
+          <div class="detail"><span>Finish Date</span><b>${batch.finish || '-'}</b></div>
+          <div class="detail"><span>Viewing</span><b>${batch.viewing}</b></div>
+          <div class="detail"><span>PIC / Paraf</span><b>${batch.pic}</b></div>
+        </div>
+        ${batch.priority ? `<p><span class="badge priority">★ Priority #${batch.priority}</span></p>` : ''}
+        ${batch.process === 'Hold' ? `<p class="hint">Hold reason: ${batch.holdReason || '-'}</p>` : ''}`;
+
+      const historyContent = `
+        <div class="history">
+          ${[...batch.history].reverse().map(item => {
+            const [time, activity] = item.split(' — ');
+            return `<div class="history-item"><b>${activity || item}</b><div>${time || ''}</div></div>`;
+          }).join('')}
+        </div>`;
+
+      showModal(`
+        <div class="modal-header">
+          <h2>${batch.product} — Batch ${batch.batch}</h2>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="tabs">
+            <button class="tab ${activeTab === 'detail' ? 'active' : ''}" onclick="openBatchDetail('${batchId}', 'detail')">Detail</button>
+            <button class="tab ${activeTab === 'history' ? 'active' : ''}" onclick="openBatchDetail('${batchId}', 'history')">History</button>
+          </div>
+          ${activeTab === 'detail' ? detailContent : historyContent}
+        </div>
+        <div class="modal-footer">
+          ${batch.process === 'Hold'
+            ? `<button class="btn success" onclick="resumeBatch('${batchId}')">Resume</button>`
+            : `<button class="btn danger" onclick="openHoldBatch('${batchId}')">Set Hold</button>`}
+          <button class="btn primary" onclick="openEditBatch('${batchId}')">Edit Batch</button>
+        </div>`);
+    }
+
+    // ============================================================
+    // 5. EDIT / MOVE PROCESS
+    // ============================================================
+    function openEditBatch(batchId) {
+      const batch = batches.find(b => b.id === batchId);
+      if (!batch) return;
+
+      const product = products[batch.product] || {};
+      const historyHTML = [...batch.history].reverse().map(item => {
+        const [time, activity] = item.split(' — ');
+        return `<div class="history-item"><b>${activity || item}</b><div>${time || ''}</div></div>`;
+      }).join('');
+
+      showModal(`
+        <div class="modal-header">
+          <div>
+            <h2>${batch.product} — Batch ${batch.batch}</h2>
+            <div class="hint">Edit informasi batch dan process dari satu tempat.</div>
+          </div>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="grid-2">
+            <div class="field"><label>Product</label><input value="${batch.product}" disabled></div>
+            <div class="field"><label>No. Batch</label><input id="editBatchNo" value="${batch.batch}"></div>
+            <div class="field"><label>Packaging Type</label><input value="${product.packaging || '-'}" disabled></div>
+            <div class="field"><label>Production Type</label><input value="${product.production || '-'}" disabled></div>
+            <div class="field"><label>Current Process</label><select id="editProcess">${processes.map(p => `<option ${p === batch.process ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+            <div class="field"><label>Machine</label><select id="editMachine">${['M-01','M-02','M-03'].map(m => `<option ${m === batch.machine ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+            <div class="field"><label>Start Date</label><input id="editStart" value="${batch.start}"></div>
+            <div class="field"><label>Finish Date</label><input id="editFinish" value="${batch.finish || '-'}" disabled><div class="hint">Terisi otomatis saat batch masuk Finish.</div></div>
+            <div class="field"><label>Viewing Type</label><input id="editViewing" value="${batch.viewing}"></div>
+            <div class="field"><label>PIC / Paraf</label><input id="editPic" value="${batch.pic}"></div>
+          </div>
+
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <b>History</b>
+              ${batch.priority ? `<span class="badge priority">★ Priority #${batch.priority}</span>` : ''}
+            </div>
+            <div class="history-scroll"><div class="history">${historyHTML || '<div class="hint">Belum ada history.</div>'}</div></div>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="justify-content:space-between">
+          <div>
+            <button class="btn danger" onclick="openDeleteConfirmation('${batchId}')">Delete Batch</button>
+            ${batch.process === 'Hold'
+              ? `<button class="btn success" onclick="resumeBatch('${batchId}')">Resume</button>`
+              : `<button class="btn ghost" onclick="openHoldBatch('${batchId}')">Set Hold</button>`}
+          </div>
+          <div style="display:flex;gap:9px">
+            <button class="btn ghost" onclick="closeModal()">Cancel</button>
+            <button class="btn primary" onclick="saveBatchEdit('${batchId}')">Save Changes</button>
+          </div>
+        </div>`);
+    }
+
+    function saveBatchEdit(batchId) {
+      const batch = batches.find(b => b.id === batchId);
+      const oldProcess = batch.process;
+
+      batch.batch = $('#editBatchNo').value;
+      batch.process = $('#editProcess').value;
+      batch.machine = $('#editMachine').value;
+      batch.start = $('#editStart').value;
+      batch.viewing = $('#editViewing').value;
+      batch.pic = $('#editPic').value;
+
+      // Finish Date is system-generated when the batch enters Finish.
+      if (oldProcess !== 'Finish' && batch.process === 'Finish') {
+        batch.finish = todayText();
+      } else if (oldProcess === 'Finish' && batch.process !== 'Finish') {
+        batch.finish = '';
+      }
+
+      batch.history.push(
+        oldProcess !== batch.process
+          ? `${nowText()} — ${oldProcess} → ${batch.process}`
+          : `${nowText()} — Batch information updated`
+      );
+
+      renderKanban();
+      closeModal();
+      showToast('Batch berhasil diperbarui');
+    }
+
+    function openDeleteConfirmation(batchId) {
+      const batch = batches.find(b => b.id === batchId);
+      if (!batch) return;
+
+      showModal(`
+        <div class="modal-header">
+          <h2>Delete Batch?</h2>
+          <button class="close" onclick="openEditBatch('${batchId}')">×</button>
+        </div>
+        <div class="modal-body">
+          <p>Anda akan menghapus <b>${batch.product} — Batch ${batch.batch}</b> dari Kanban.</p>
+          <div style="padding:12px;border-radius:10px;background:#fff4f4;border:1px solid #f2cccc;color:#8b3333">
+            Tindakan ini menghapus batch dari prototype dan tidak dapat dibatalkan.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn ghost" onclick="openEditBatch('${batchId}')">Cancel</button>
+          <button class="btn danger" onclick="confirmDeleteBatch('${batchId}')">Delete Batch</button>
+        </div>`, true);
+    }
+
+    function confirmDeleteBatch(batchId) {
+      const index = batches.findIndex(b => b.id === batchId);
+      if (index < 0) return;
+
+      batches.splice(index, 1);
+      normalizePriorityOrder();
+      renderKanban();
+      closeModal();
+      showToast('Batch berhasil dihapus');
+    }
+
+    // ============================================================
+    // 6. HOLD / RESUME
+    // ============================================================
+    function openHoldBatch(batchId) {
+      const batch = batches.find(b => b.id === batchId);
+
+      showModal(`
+        <div class="modal-header">
+          <h2>Hold Batch ${batch.batch}</h2>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <p><b>${batch.product}</b><br><span class="hint">Current Process: ${batch.process}</span></p>
+          <div class="field">
+            <label>Keterangan Hold (opsional)</label>
+            <textarea id="holdNote" placeholder="Isi keterangan jika diperlukan"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn ghost" onclick="openEditBatch('${batchId}')">Cancel</button>
+          <button class="btn danger" onclick="confirmHold('${batchId}')">Set Hold</button>
+        </div>`, true);
+    }
+
+    function confirmHold(batchId) {
+      const batch = batches.find(b => b.id === batchId);
+      batch.previousProcess = batch.process;
+      batch.process = 'Hold';
+      batch.holdReason = $('#holdNote').value;
+      batch.history.push(`${nowText()} — ${batch.previousProcess} → Hold`);
+      renderKanban();
+      closeModal();
+      showToast('Batch dipindahkan ke Hold');
+    }
+
+    function resumeBatch(batchId) {
+      const batch = batches.find(b => b.id === batchId);
+      const destination = batch.previousProcess || 'Ready';
+      batch.process = destination;
+      batch.holdReason = '';
+      batch.history.push(`${nowText()} — Hold → ${destination}`);
+      renderKanban();
+      closeModal();
+      showToast(`Batch kembali ke ${destination}`);
+    }
+
+    // ============================================================
+    // 7. INPUT NEW BATCH
+    // ============================================================
+    function openInputBatch() {
+      const productOptions = Object.keys(products).map(name => `<option>${name}</option>`).join('');
+
+      showModal(`
+        <div class="modal-header">
+          <h2>+ Input Batch</h2>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="grid-2">
+            <div class="field">
+              <label>Nama Produk</label>
+              <input id="newProduct" list="productList" placeholder="Cari / ketik produk">
+              <datalist id="productList">${productOptions}</datalist>
+              <div class="hint">Jika produk belum tersedia, produk akan ditambahkan ke Master Product.</div>
+            </div>
+            <div class="field"><label>No. Batch</label><input id="newBatchNo" placeholder="contoh: 025"></div>
+            <div class="field"><label>Jenis Kemasan</label><select id="newPackaging"><option>Vial</option><option>Ampoule</option></select></div>
+            <div class="field"><label>Jenis Produksi</label><select id="newProductionType"><option>Phapros</option><option>Toll In</option></select></div>
+            <div class="field"><label>Jenis Viewing</label><input id="newViewing" value="Visual"></div>
+            <div class="field"><label>Mesin</label><select id="newMachine"><option>M-01</option><option>M-02</option><option>M-03</option></select></div>
+            <div class="field"><label>Tanggal Mulai</label><input id="newStart" value="23/09/2026"></div>
+            <div class="field"><label>PIC / Paraf</label><input id="newPic" placeholder="Nama PIC"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn ghost" onclick="closeModal()">Cancel</button>
+          <button class="btn primary" onclick="saveNewBatch()">Simpan Batch</button>
+        </div>`);
+    }
+
+    function saveNewBatch() {
+      const productName = $('#newProduct').value.trim();
+      const batchNo = $('#newBatchNo').value.trim();
+      if (!productName || !batchNo) return showToast('Nama produk dan batch wajib diisi');
+
+      if (!products[productName]) {
+        products[productName] = {
+          packaging: $('#newPackaging').value,
+          production: $('#newProductionType').value
+        };
+      }
+
+      batches.push({
+        id: `B${Date.now()}`,
+        product: productName,
+        batch: batchNo,
+        process: 'Ready',
+        machine: $('#newMachine').value,
+        start: $('#newStart').value,
+        finish: '',
+        viewing: $('#newViewing').value,
+        pic: $('#newPic').value || '-',
+        priority: null,
+        holdReason: '',
+        history: [`${nowText()} — Batch Created`]
+      });
+
+      renderKanban();
+      closeModal();
+      showToast('Batch baru masuk ke Ready');
+    }
+
+    // ============================================================
+    // 8. PRIORITY QUEUE
+    //    - Priority order is always unique: 1, 2, 3, ...
+    //    - Dragging changes array order, then we re-number automatically.
+    // ============================================================
+    function getPriorityBatches() {
+      return batches
+        .filter(b => b.priority != null)
+        .sort((a, b) => a.priority - b.priority);
+    }
+
+    function normalizePriorityOrder(orderedIds = null) {
+      const priorityBatches = orderedIds
+        ? orderedIds.map(id => batches.find(b => b.id === id)).filter(Boolean)
+        : getPriorityBatches();
+
+      priorityBatches.forEach((batch, index) => {
+        batch.priority = index + 1;
+      });
+    }
+
+    function renderPriorityTable() {
+      const priorityBatches = getPriorityBatches();
+
+      $('#priorityTable').innerHTML = `
+        <table>
+          <thead><tr><th>#</th><th>Product</th><th>Batch</th><th>Process</th><th>Machine</th><th>Start</th></tr></thead>
+          <tbody>
+            ${priorityBatches.length
+              ? priorityBatches.map(batch => `
+                <tr>
+                  <td>★ ${batch.priority}</td>
+                  <td>${batch.product}</td>
+                  <td>${batch.batch}</td>
+                  <td>${batch.process}</td>
+                  <td>${batch.machine}</td>
+                  <td>${batch.start}</td>
+                </tr>`).join('')
+              : '<tr><td colspan="6" class="hint">Belum ada priority batch.</td></tr>'}
+          </tbody>
+        </table>`;
+    }
+
+    let priorityDraftIds = [];
+
+    function openPriorityManager() {
+      normalizePriorityOrder();
+      priorityDraftIds = getPriorityBatches().map(batch => batch.id);
+      renderPriorityManagerModal();
+    }
+
+    function renderPriorityManagerModal() {
+      const priorityBatches = priorityDraftIds
+        .map(id => batches.find(batch => batch.id === id))
+        .filter(Boolean);
+
+      const availableBatches = batches.filter(batch =>
+        batch.process !== 'Finish' &&
+        batch.process !== 'Hold' &&
+        !priorityDraftIds.includes(batch.id)
+      );
+
+      showModal(`
+        <div class="modal-header">
+          <h2>Manage Priority</h2>
+          <button class="close" onclick="closeModal()">×</button>
+        </div>
+        <div class="modal-body priority-manager-body">
+          <p class="hint">Drag batch ke atas atau bawah untuk mengubah urutan. Nomor priority akan disusun otomatis dan tidak dapat duplikat.</p>
+
+          <div id="priorityEditor" class="priority-editor">
+            ${priorityBatches.length
+              ? priorityBatches.map((batch, index) => priorityItemHTML(batch, index + 1)).join('')
+              : '<div class="hint">Belum ada batch dalam Priority Queue.</div>'}
+          </div>
+
+          <div class="add-priority">
+            <div class="field">
+              <label>Tambah Batch ke Priority Queue</label>
+              <select id="priorityBatchSelect" class="priority-select" onchange="selectPriorityBatch(this.value)">
+                <option value="">Pilih batch...</option>
+                ${availableBatches.map(batch => `
+                  <option value="${batch.id}">${batch.product} — Batch ${batch.batch} (${batch.process})</option>
+                `).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn ghost" onclick="closeModal()">Cancel</button>
+          <button class="btn primary" onclick="savePriorityOrder()">Save Priority</button>
+        </div>`);
+
+      $('#modal').style.height = 'min(680px, 88vh)';
+      enablePriorityDragAndDrop();
+    }
+
+    function priorityItemHTML(batch, displayPriority = batch.priority) {
+      return `
+        <div class="priority-item" draggable="true" data-priority-id="${batch.id}">
+          <div class="drag-handle" title="Drag to reorder">⋮⋮</div>
+          <div class="priority-number">${displayPriority}</div>
+          <div class="priority-info">
+            <span class="priority-name">${batch.product} — Batch ${batch.batch}</span>
+            <span class="priority-meta">${batch.process} • ${batch.machine}</span>
+          </div>
+          <div class="priority-actions">
+            <button class="icon-btn" onclick="movePriority('${batch.id}', -1)" title="Move up">↑</button>
+            <button class="icon-btn" onclick="movePriority('${batch.id}', 1)" title="Move down">↓</button>
+            <button class="icon-btn" onclick="removePriority('${batch.id}')" title="Remove">×</button>
+          </div>
+        </div>`;
+    }
+
+    function getPriorityIdsFromEditor() {
+      return [...document.querySelectorAll('[data-priority-id]')].map(item => item.dataset.priorityId);
+    }
+
+    function syncPriorityDraftFromEditor() {
+      const ids = getPriorityIdsFromEditor();
+      if (ids.length || priorityDraftIds.length === 0) priorityDraftIds = ids;
+    }
+
+    function updatePriorityNumbersInEditor() {
+      document.querySelectorAll('[data-priority-id]').forEach((item, index) => {
+        item.querySelector('.priority-number').textContent = index + 1;
+      });
+    }
+
+    function enablePriorityDragAndDrop() {
+      let draggedItem = null;
+      const editor = $('#priorityEditor');
+      if (!editor) return;
+
+      editor.querySelectorAll('.priority-item').forEach(item => {
+        item.addEventListener('dragstart', () => {
+          draggedItem = item;
+          item.classList.add('dragging');
+        });
+
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
+          editor.querySelectorAll('.priority-item').forEach(row => row.classList.remove('drag-over'));
+          draggedItem = null;
+          updatePriorityNumbersInEditor();
+          syncPriorityDraftFromEditor();
+        });
+
+        item.addEventListener('dragover', event => {
+          event.preventDefault();
+          if (!draggedItem || draggedItem === item) return;
+          item.classList.add('drag-over');
+        });
+
+        item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+
+        item.addEventListener('drop', event => {
+          event.preventDefault();
+          item.classList.remove('drag-over');
+          if (!draggedItem || draggedItem === item) return;
+
+          const rows = [...editor.querySelectorAll('.priority-item')];
+          const draggedIndex = rows.indexOf(draggedItem);
+          const targetIndex = rows.indexOf(item);
+
+          if (draggedIndex < targetIndex) item.after(draggedItem);
+          else item.before(draggedItem);
+
+          updatePriorityNumbersInEditor();
+          syncPriorityDraftFromEditor();
+        });
+      });
+    }
+
+    function movePriority(batchId, direction) {
+      const item = document.querySelector(`[data-priority-id="${batchId}"]`);
+      if (!item) return;
+
+      const sibling = direction < 0 ? item.previousElementSibling : item.nextElementSibling;
+      if (!sibling || !sibling.matches('.priority-item')) return;
+
+      if (direction < 0) sibling.before(item);
+      else sibling.after(item);
+
+      updatePriorityNumbersInEditor();
+      syncPriorityDraftFromEditor();
+    }
+
+    function selectPriorityBatch(batchId) {
+      if (!batchId) return;
+      syncPriorityDraftFromEditor();
+      if (priorityDraftIds.includes(batchId)) return;
+
+      const batch = batches.find(b => b.id === batchId);
+      if (!batch || batch.process === 'Finish' || batch.process === 'Hold') return;
+
+      priorityDraftIds.push(batchId);
+      renderPriorityManagerModal();
+    }
+
+    function removePriority(batchId) {
+      syncPriorityDraftFromEditor();
+      priorityDraftIds = priorityDraftIds.filter(id => id !== batchId);
+      renderPriorityManagerModal();
+    }
+
+    function savePriorityOrder() {
+      syncPriorityDraftFromEditor();
+
+      // Priority is committed only when Save Priority is clicked.
+      batches.forEach(batch => { batch.priority = null; });
+      priorityDraftIds.forEach((id, index) => {
+        const batch = batches.find(b => b.id === id);
+        if (batch) batch.priority = index + 1;
+      });
+
+      renderKanban();
+      closeModal();
+      showToast('Priority Queue diperbarui');
+    }
+
+    // ============================================================
+    // 9. EVENTS + INITIAL RENDER
+    // ============================================================
+    $('#searchInput').addEventListener('input', renderKanban);
+    $('#overlay').addEventListener('click', event => {
+      if (event.target === $('#overlay')) closeModal();
+    });
+
+    renderKanban();
+  </script>
+</body>
+</html>
+
+
+kanban_prototype_v7.html
+HTML
+
+
